@@ -68,7 +68,7 @@ dx --dex [--output=<file>] [<file>.class | <file>.{zip,jar,apk} | <directory>]
 dx --dex --output=user.dex ClassStudent.class
 ```
 
-这里我为了防止出错，提前的当前目录下新建user.dex文件。上述命令依赖编译.class文件的JDK版本，如果使用的是JDK8编译的话会提示以下问题：
+这里我为了防止出错，提前在当前目录下新建好了user.dex文件。上述命令依赖编译.class文件的JDK版本，如果使用的是JDK8编译的class会提示以下问题：
 ```java
 PARSE ERROR:
 unsupported class file version 52.0
