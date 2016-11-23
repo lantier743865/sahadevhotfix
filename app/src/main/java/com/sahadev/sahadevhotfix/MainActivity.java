@@ -39,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * 加载指定路径的类
+     * 加载指定路径的dex
      *
      * @param apkPath
      */
