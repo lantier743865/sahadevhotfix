@@ -33,44 +33,43 @@ public class MainActivity extends AppCompatActivity {
         mSampleText = (TextView) findViewById(R.id.sample_text);
         mLog = new Log();
 
-        try {
-            String unzipRAWFile = unzipRAWFile(this);
-            loadClass(unzipRAWFile);
-        } catch (ClassNotFoundException e) {
-            e.printStackTrace();
-        } catch (InstantiationException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
-            e.printStackTrace();
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void loadClass(String apkPath) throws ClassNotFoundException, IllegalAccessException, InstantiationException, InvocationTargetException, NoSuchMethodException {
-        ClassLoader classLoader = getClassLoader();
-
-        File file = new File(apkPath);
-
-        DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
-        Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
-        mLog.i(TAG, "ClassStudent = " + aClass);
-
-        Object instance = aClass.newInstance();
-        Method method = aClass.getMethod("setName", String.class);
-        method.invoke(instance, "Sahadev");
-
-        Method getNameMethod = aClass.getMethod("getName");
-        Object invoke = getNameMethod.invoke(instance);
-
-        mLog.i(TAG, "invoke result = " + invoke);
+        String unzipRAWFile = unzipRAWFile(this);
+        loadClass(unzipRAWFile);
 
     }
 
     /**
-     * 解压原始的APK文件
+     * 加载指定路径的类
+     *
+     * @param apkPath
+     */
+    private void loadClass(String apkPath) {
+        ClassLoader classLoader = getClassLoader();
+
+        File file = new File(apkPath);
+
+        try {
+
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
+            Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
+            mLog.i(TAG, "ClassStudent = " + aClass);
+
+            Object instance = aClass.newInstance();
+            Method method = aClass.getMethod("setName", String.class);
+            method.invoke(instance, "Sahadev");
+
+            Method getNameMethod = aClass.getMethod("getName");
+            Object invoke = getNameMethod.invoke(instance);
+
+            mLog.i(TAG, "invoke result = " + invoke);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 解压原始的dex文件
      *
      * @param context
      * @return
