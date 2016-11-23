@@ -43,11 +43,12 @@ public class ClassStudent {
 }
 ```
 
-> **Note:** 这里要注意，不要对类添加包名，因为在后期对class文件处理时会遇到问题，具体问题会稍后说明。
+> **Note:** 这里要注意，不要对类添加包名，因为在后期对class文件处理时会遇到问题，具体问题会稍后说明。上面的getName方法在返回时对this.name属性添加了一段字符串，这里请注意，后面会用到。
 
 在文件创建好之后，对Java文件进行编译：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123174417.png)
 
+###将.class文件转为.dex文件
 好，现在我们使用class文件生成对应的dex文件。生成dex文件所需要的工具为dx，dx工具位于sdk的build-tools文件夹内，如下图所示：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123175306.png)
 
@@ -78,17 +79,27 @@ unsupported class file version 52.0
 
 这里的52.0意味着class文件不被支持，需要使用JDK8以下的版本进行编译，但是dx所需的环境还是需要为JDK8的，这里我编译class文件使用的是JDK7,请注意。
 
+上面我们提到了为什么先不要在ClassStudent中使用包名，因为在执行dx的时候会报以下异常，这是因为以下第二项条件没有通过，该代码位于com.android.dx.cf.direct.DirectClassFile文件内：
+```java
+	String thisClassName = thisClass.getClassType().getClassName();
+	if(!(filePath.endsWith(".class") && filePath.startsWith(thisClassName) && (filePath.length()==(thisClassName.length()+6)))){
+		throw new ParseException("class name (" + thisClassName + ") does not match path (" + filePath + ")");
+	}
+```
+
 运行截图如下所示：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123160811.png)
 
 好了，到此为止我们的目录应该如下：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123181510.png)
 
+###写入dex到本地磁盘
 接下来将生成好的user.dex文件放入Android工程的res\raw文件夹下：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123181909.png)
 
 在系统启动时将其写入到磁盘，这里不再贴出具体的写入代码，项目的MainActivity中包含了此部分代码。
 
+###加载dex中的类并测试
 在写入完毕之后使用DexClassLoader对其进行加载。DexClassLoader的构造方法需要4个参数，这里对这4个参数进行简要说明：
 
 - String dexPath:dex文件的绝对路径。在这里我将其放入了应用的cache文件夹下。
