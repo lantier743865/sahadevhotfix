@@ -13,4 +13,4 @@ Hello SahadevHotFix
 - [Android dex分包方案](http://blog.csdn.net/vurtne_ye/article/details/39666381)
 - [dodola/HotFix](https://github.com/dodola/HotFix)
 
-##一、生成dex文件及加载
+##一、dex文件的生成与加载

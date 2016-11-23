@@ -13,6 +13,8 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 import dalvik.system.DexClassLoader;
 import dalvik.system.PathClassLoader;
@@ -21,28 +23,50 @@ public class MainActivity extends AppCompatActivity {
     private String TAG = getClass().getSimpleName();
 
     private TextView mSampleText;
+    private Log mLog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        mSampleText = (TextView) findViewById(R.id.sample_text);
+        mLog = new Log();
+
         try {
             String unzipRAWFile = unzipRAWFile(this);
             loadClass(unzipRAWFile);
         } catch (ClassNotFoundException e) {
             e.printStackTrace();
+        } catch (InstantiationException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
         }
     }
 
-    private void loadClass(String apkPath) throws ClassNotFoundException {
+    private void loadClass(String apkPath) throws ClassNotFoundException, IllegalAccessException, InstantiationException, InvocationTargetException, NoSuchMethodException {
         ClassLoader classLoader = getClassLoader();
 
         File file = new File(apkPath);
 
         DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
         Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
-        Log.i(TAG, "ClassStudent = " + aClass);
+        mLog.i(TAG, "ClassStudent = " + aClass);
+
+        Object instance = aClass.newInstance();
+        Method method = aClass.getMethod("setName", String.class);
+        method.invoke(instance, "Sahadev");
+
+        Method getNameMethod = aClass.getMethod("getName");
+        Object invoke = getNameMethod.invoke(instance);
+
+        mLog.i(TAG, "invoke result = " + invoke);
+
     }
 
     /**
@@ -95,11 +119,17 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
 
-            Log.i(TAG, "文件解压完毕，路径地址为：" + apkFilePath);
+            mLog.i(TAG, "文件解压完毕，路径地址为：" + apkFilePath);
         } else {
-            Log.i(TAG, "文件已存在，无需解压");
+            mLog.i(TAG, "文件已存在，无需解压");
         }
 
         return apkFilePath;
+    }
+
+    private class Log {
+        void i(String TAG, String content) {
+            mSampleText.append(content + "\n\n");
+        }
     }
 }
