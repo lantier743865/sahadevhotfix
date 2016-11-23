@@ -20,6 +20,7 @@
 - 4.加载解压后的.dex文件中的类，并调用其方法进行测试。
 
 >**Note:** 在阅读本节之前最好先了解一下类加载器的双亲委派原则、DexClassLoader的使用以及反射的知识点。
+
 ###编写基本的Java文件并编译为.class文件
 首先我们在一个工程目录下开始创建并编写我们的Java文件，你可能会选择各种IDE来做这件事，但我在这里劝你不要这么做，因为有坑在等你。等把基本流程搞清楚可以再选择更进阶的方法。这里我们可以选择文本编辑器比如EditPlus来对Java文件进行编辑。
 
@@ -46,7 +47,9 @@ public class ClassStudent {
 
 在文件创建好之后，对Java文件进行编译：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123174417.png)
+
 好，现在我们使用class文件生成对应的dex文件。生成dex文件所需要的工具为dx，dx工具位于sdk的build-tools文件夹内，如下图所示：
+![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123175306.png)
 
 > **Tips:** 为了方便使用，建议将dx的路径添加到环境变量中。如果对dx工具不熟悉的，可以在终端中输入dx --help以获取帮助。
 
@@ -54,7 +57,6 @@ dx工具的基本用法是：
 ```
 dx --dex [--output=<file>] [<file>.class | <file>.{zip,jar,apk} | <directory>]
 ```
-
 
 > **Tips:** 刚开始自己摸索的时候，就没有仔细看命令，导致后面两个参数的顺序颠倒了，搞出了一些让人疑惑难解的问题，最后又不得不去找dx工具的源码调试，最后才发现自己的问题在哪。如果有对dx工具感兴趣的，可以对dx的包进行反编译或者获取dx的相关源代码进行了解。dx.lib文件位于dx.bat的下级目录lib文件夹中，可以使用JD-GUI工具对其进行查看或导出。如果需要获取源代码的，请使用以下命令进行克隆：
 > 
@@ -77,11 +79,13 @@ unsupported class file version 52.0
 这里的52.0意味着class文件不被支持，需要使用JDK8以下的版本进行编译，但是dx所需的环境还是需要为JDK8的，这里我编译class文件使用的是JDK7,请注意。
 
 运行截图如下所示：
+![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123160811.png)
 
 好了，到此为止我们的目录应该如下：
-
+![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123181510.png)
 
 接下来将生成好的user.dex文件放入Android工程的res\raw文件夹下：
+![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/20161123181909.png)
 
 在系统启动时将其写入到磁盘，这里不再贴出具体的写入代码，项目的MainActivity中包含了此部分代码。
 
@@ -104,12 +108,12 @@ Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
 
 然后我们对其进行初始化，并调用相关的get/set方法对其进行验证，在这里我传给ClassStudent对象一个字符串，然后调用它的get方法获取在方法内合并后的字符串：
 ```
-            Object instance = aClass.newInstance();
-            Method method = aClass.getMethod("setName", String.class);
-            method.invoke(instance, "Sahadev");
-
-            Method getNameMethod = aClass.getMethod("getName");
-            Object invoke = getNameMethod.invoke(instance);
+	Object instance = aClass.newInstance();
+	Method method = aClass.getMethod("setName", String.class);
+	method.invoke(instance, "Sahadev");
+			
+	Method getNameMethod = aClass.getMethod("getName");
+	Object invoke = getNameMethod.invoke(instance););
 ```
 
 最后我们实现的代码可能是这样的：
@@ -146,3 +150,4 @@ Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
 ```
 
 最后附上我们的运行截图：
+![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/194172438045771671.jpg)
