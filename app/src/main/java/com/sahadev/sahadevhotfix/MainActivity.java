@@ -20,6 +20,8 @@ import dalvik.system.PathClassLoader;
 public class MainActivity extends AppCompatActivity {
     private String TAG = getClass().getSimpleName();
 
+    private TextView mSampleText;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -28,8 +30,6 @@ public class MainActivity extends AppCompatActivity {
         try {
             String unzipRAWFile = unzipRAWFile(this);
             loadClass(unzipRAWFile);
-        } catch (IOException e) {
-            e.printStackTrace();
         } catch (ClassNotFoundException e) {
             e.printStackTrace();
         }
@@ -40,10 +40,9 @@ public class MainActivity extends AppCompatActivity {
 
         File file = new File(apkPath);
 
-        Class.forName("android.support.v4.app.FragmentActivity");
-        DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent(), apkPath, classLoader);
-        Class<?> aClass = dexClassLoader.loadClass("com.kongfuzi.student.app.HomeActivity");
-        Log.i(TAG, "com.kongfuzi.student.app.HomeActivity = " + aClass);
+        DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
+        Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
+        Log.i(TAG, "ClassStudent = " + aClass);
     }
 
     /**
@@ -53,28 +52,52 @@ public class MainActivity extends AppCompatActivity {
      * @return
      * @throws IOException
      */
-    private String unzipRAWFile(Context context) throws IOException {
+    private String unzipRAWFile(Context context) {
 
         String apkFilePath;
         Resources resources = context.getResources();
-        InputStream inputStream = resources.openRawResource(R.raw.yikaojiuguo_release);
+        InputStream inputStream = resources.openRawResource(R.raw.user);
 
         File externalCacheDir = context.getExternalCacheDir();
 
-        File file = new File(externalCacheDir, resources.getResourceEntryName(R.raw.yikaojiuguo_release) + ".apk");
+        File file = new File(externalCacheDir, resources.getResourceEntryName(R.raw.user) + ".dex");
 
         apkFilePath = file.getAbsolutePath();
         if (!file.exists()) {
-            BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(new FileOutputStream(file));
+            BufferedOutputStream bufferedOutputStream = null;
+            FileOutputStream fileOutputStream = null;
+
+            try {
+                fileOutputStream = new FileOutputStream(file);
+                bufferedOutputStream = new BufferedOutputStream(fileOutputStream);
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
 
             byte[] buffer = new byte[4 * 1024];
-            int size = 0;
-            while ((size = inputStream.read(buffer)) != -1) {
-                bufferedOutputStream.write(buffer, 0, size);
-                bufferedOutputStream.flush();
+            int size;
+            try {
+                while ((size = inputStream.read(buffer)) != -1) {
+                    bufferedOutputStream.write(buffer, 0, size);
+                    bufferedOutputStream.flush();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
-            inputStream.close();
-            bufferedOutputStream.close();
+            try {
+                if (inputStream != null)
+                    inputStream.close();
+                if (bufferedOutputStream != null)
+                    bufferedOutputStream.close();
+                if (fileOutputStream != null)
+                    fileOutputStream.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            Log.i(TAG, "文件解压完毕，路径地址为：" + apkFilePath);
+        } else {
+            Log.i(TAG, "文件已存在，无需解压");
         }
 
         return apkFilePath;
