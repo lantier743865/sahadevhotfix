@@ -24,12 +24,12 @@
 ###编写基本的Java文件并编译为.class文件
 首先我们在一个工程目录下开始创建并编写我们的Java文件，你可能会选择各种IDE来做这件事，但我在这里劝你不要这么做，因为有坑在等你。等把基本流程搞清楚可以再选择更进阶的方法。这里我们可以选择文本编辑器比如EditPlus来对Java文件进行编辑。
 
-新建一个Java文件，并命名为：ClassStudent.java，并在java文件内键入以下代码：
+新建一个Java文件，并命名为：com.sahadev.bean.ClassStudent.java，并在java文件内键入以下代码：
 ```java
-public class ClassStudent {
+public class com.sahadev.bean.ClassStudent {
 	private String name;
 
-	public ClassStudent() {
+	public com.sahadev.bean.ClassStudent() {
 
 	}
 
@@ -66,14 +66,14 @@ dx --dex [--output=<file>] [<file>.class | <file>.{zip,jar,apk} | <directory>]
 
 我们使用以下命令生成dex文件：
 ```
-dx --dex --output=user.dex ClassStudent.class
+dx --dex --output=user.dex com.sahadev.bean.ClassStudent.class
 ```
 
 这里我为了防止出错，提前在当前目录下新建好了user.dex文件。上述命令依赖编译.class文件的JDK版本，如果使用的是JDK8编译的class会提示以下问题：
 ```java
 PARSE ERROR:
 unsupported class file version 52.0
-...while parsing ClassStudent.class
+...while parsing com.sahadev.bean.ClassStudent.class
 1 error; aborting
 ```
 
@@ -114,7 +114,7 @@ DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "
 
 接来下开始load我们刚刚写入在dex文件中的ClassStudent类：
 ```
-Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
+Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
 ```
 
 然后我们对其进行初始化，并调用相关的get/set方法对其进行验证，在这里我传给ClassStudent对象一个字符串，然后调用它的get方法获取在方法内合并后的字符串：
@@ -142,8 +142,8 @@ Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
         try {
 
             DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
-            Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
-            mLog.i(TAG, "ClassStudent = " + aClass);
+            Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
+            mLog.i(TAG, "com.sahadev.bean.ClassStudent = " + aClass);
 
             Object instance = aClass.newInstance();
             Method method = aClass.getMethod("setName", String.class);
@@ -162,3 +162,6 @@ Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
 
 最后附上我们的运行截图：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/194172438045771671.jpg)
+
+##二、Class文件的替换
+[https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1](https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1)

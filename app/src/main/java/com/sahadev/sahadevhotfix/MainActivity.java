@@ -4,8 +4,9 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.util.Log;
 import android.widget.TextView;
+
+import com.sahadev.bean.ClassStudent;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -13,9 +14,11 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import dalvik.system.BaseDexClassLoader;
 import dalvik.system.DexClassLoader;
 import dalvik.system.PathClassLoader;
 
@@ -35,7 +38,105 @@ public class MainActivity extends AppCompatActivity {
 
         String unzipRAWFile = unzipRAWFile(this);
         loadClass(unzipRAWFile);
+        inject(unzipRAWFile);
+        demonstrationRawMode();
+    }
 
+    /**
+     * 验证替换类后的效果
+     */
+    private void demonstrationRawMode() {
+        ClassStudent classStudent = new ClassStudent();
+        classStudent.setName("Lavon");
+        mLog.i(TAG, classStudent.getName());
+    }
+
+    public String inject(String apkPath) {
+        boolean hasBaseDexClassLoader = true;
+
+        File file = new File(apkPath);
+        try {
+            Class.forName("dalvik.system.BaseDexClassLoader");
+        } catch (ClassNotFoundException e) {
+            hasBaseDexClassLoader = false;
+        }
+        if (hasBaseDexClassLoader) {
+            PathClassLoader pathClassLoader = (PathClassLoader) getClassLoader();
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", pathClassLoader);
+            try {
+                Object dexElements = combineArray(getDexElements(getPathList(pathClassLoader)), getDexElements(getPathList(dexClassLoader)));
+                Object pathList = getPathList(pathClassLoader);
+                setField(pathList, pathList.getClass(), "dexElements", dexElements);
+                return "SUCCESS";
+            } catch (Throwable e) {
+                e.printStackTrace();
+                return android.util.Log.getStackTraceString(e);
+            }
+        }
+        return "SUCCESS";
+    }
+
+    public void setField(Object pathList, Class aClass, String fieldName, Object fieldValue) {
+
+        try {
+            Field declaredField = aClass.getDeclaredField(fieldName);
+            declaredField.setAccessible(true);
+            declaredField.set(pathList, fieldValue);
+
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    public Object combineArray(Object object, Object object2) {
+        Class<?> aClass = Array.get(object, 0).getClass();
+
+        Object obj = Array.newInstance(aClass, 2);
+
+        Array.set(obj, 0, Array.get(object2, 0));
+        Array.set(obj, 1, Array.get(object, 0));
+
+        return obj;
+    }
+
+    public Object getDexElements(Object object) {
+        if (object == null)
+            return null;
+
+        Class<?> aClass = object.getClass();
+        try {
+            Field dexElements = aClass.getDeclaredField("dexElements");
+            dexElements.setAccessible(true);
+            return dexElements.get(object);
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+
+    }
+
+    public Object getPathList(BaseDexClassLoader classLoader) {
+        Class<? extends BaseDexClassLoader> aClass = classLoader.getClass();
+
+        Class<?> superclass = aClass.getSuperclass();
+        try {
+
+            Field pathListField = superclass.getDeclaredField("pathList");
+            pathListField.setAccessible(true);
+            Object object = pathListField.get(classLoader);
+
+            return object;
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     /**
@@ -44,6 +145,11 @@ public class MainActivity extends AppCompatActivity {
      * @param apkPath
      */
     private void loadClass(String apkPath) {
+        //该方法内的以下代码需要注释
+        if (true) {
+            return;
+        }
+
         ClassLoader classLoader = getClassLoader();
 
         File file = new File(apkPath);
@@ -51,8 +157,8 @@ public class MainActivity extends AppCompatActivity {
         try {
 
             DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
-            Class<?> aClass = dexClassLoader.loadClass("ClassStudent");
-            mLog.i(TAG, "ClassStudent = " + aClass);
+            Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
+            mLog.i(TAG, "com.sahadev.bean.ClassStudent = " + aClass);
 
             Object instance = aClass.newInstance();
             Method method = aClass.getMethod("setName", String.class);
