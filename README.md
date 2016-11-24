@@ -24,7 +24,8 @@
 ###编写基本的Java文件并编译为.class文件
 首先我们在一个工程目录下开始创建并编写我们的Java文件，你可能会选择各种IDE来做这件事，但我在这里劝你不要这么做，因为有坑在等你。等把基本流程搞清楚可以再选择更进阶的方法。这里我们可以选择文本编辑器比如EditPlus来对Java文件进行编辑。
 
-新建一个Java文件，并命名为：com.sahadev.bean.ClassStudent.java，并在java文件内键入以下代码：
+新建一个Java文件，并命名为：com.sahadev.bean.ClassStudent.java，并在java文件内键入以下代码
+
 ```java
 public class com.sahadev.bean.ClassStudent {
 	private String name;
@@ -164,4 +165,179 @@ Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/194172438045771671.jpg)
 
 ##二、Class文件的替换
+在完成基本外部类加载之后，我们这一节开始对工程内部的类实行替换。
+
+> **Tips:** 本章主要依赖文章[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)中的未实现代码实现，实现思路也源自该文章，在阅读本文之前可以先行了解。
+
+这一节我们主要实现的流程有：
+
+- 在类的内部创建与外部dex相同的类文件，但在调用getName()方法返回字符串时会稍有区别，以便进行结果验证
+- 使用DexClassLoader加载外部的user.dex
+- 将DexClassLoader中的dexElements放在PathClassLoader的dexElements之前
+- 验证替换结果
+
+因为上节课中专门声明了不可以对类声明包名，但是这样在Android工程中无法引用没有包名的类，所以把不能声明包名的问题解决了一下。
+
+上一节课主要遇到的问题是在编译Java文件时没有使用正当的命令。对含有包名的Java文件应当使用以下命令：
+```
+javac -d ./ ClassStudent.java
+```
+
+经过上面命令编译后的.class文件便可以顺利通过dx工具的转换。
+
+我们还是按照第一节的步骤将转换后的user.dex文件放入工程中并写入本地磁盘，以便稍后使用。
+
+在开始之前还是先说一下具体的实现思路：一个类在使用之前必须要经过加载器的加载才能使用，在加载器加载类之前会调用自身的findClass()方法进行查找。然而在Android中类的查找使用的是BaseDexClassLoader，BaseDexClassLoader对findClass()方法进行了重写：
+```java
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        Class clazz = pathList.findClass(name);
+
+        if (clazz == null) {
+            throw new ClassNotFoundException(name);
+        }
+
+        return clazz;
+    }
+```
+
+pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
+```java
+    public Class findClass(String name) {
+        for (Element element : dexElements) {
+            DexFile dex = element.dexFile;
+
+            if (dex != null) {
+                Class clazz = dex.loadClassBinaryName(name, definingContext);
+                if (clazz != null) {
+                    return clazz;
+                }
+            }
+        }
+
+        return null;
+    }
+```
+
+由此我们可以得知类的查找是通过遍历dexElements来进行查找的。所以为了实现替换效果，我们需要将DexClassLoader中的Element对象放到dexElements数组的第0个位置，这样才能在BaseDexClassLoader查找类时先找到DexClassLoader所用的user.dex中的类。
+
+> **Tips:** 如果对上面这句话看不懂的，没关系，可以先了解一下类的加载机制与ClassLoader的双亲委派。
+
+好了，有了基本的实现思路之后，我们接下来对思路进行实践。
+
+下面的方法是我们主要的注入方法：
+```java
+    public String inject(String apkPath) {
+        boolean hasBaseDexClassLoader = true;
+
+        File file = new File(apkPath);
+        try {
+            Class.forName("dalvik.system.BaseDexClassLoader");
+        } catch (ClassNotFoundException e) {
+            hasBaseDexClassLoader = false;
+        }
+        if (hasBaseDexClassLoader) {
+            PathClassLoader pathClassLoader = (PathClassLoader) getClassLoader();
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", pathClassLoader);
+            try {
+                Object dexElements = combineArray(getDexElements(getPathList(pathClassLoader)), getDexElements(getPathList(dexClassLoader)));
+                Object pathList = getPathList(pathClassLoader);
+                setField(pathList, pathList.getClass(), "dexElements", dexElements);
+                return "SUCCESS";
+            } catch (Throwable e) {
+                e.printStackTrace();
+                return android.util.Log.getStackTraceString(e);
+            }
+        }
+        return "SUCCESS";
+    }
+ ```
+
+ 这段代码原封不动采用于[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)文章中最后的实现代码，但是该文章并没有给出具体的注入细节。我们接下里的过程就是对没有给全的细节进行补充与讲解。
+
+这段代码的核心在于将DexClassLoader中的dexElements与PathClassLoader中的dexElements进行合并，然后将合并后的dexElements替换原先的dexElements。最后我们在使用ClassStudent类的时候便可以直接使用外部的ClassStudent，而不会再使用默认的ClassStudent类。默认情况下回加载默认的ClassStudent类。
+
+首先我们通过classLoader获取各自的pathList对象：
+```java
+    public Object getPathList(BaseDexClassLoader classLoader) {
+        Class<? extends BaseDexClassLoader> aClass = classLoader.getClass();
+
+        Class<?> superclass = aClass.getSuperclass();
+        try {
+
+            Field pathListField = superclass.getDeclaredField("pathList");
+            pathListField.setAccessible(true);
+            Object object = pathListField.get(classLoader);
+
+            return object;
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+```
+
+在使用以上反射的时候要注意，pathList属性属于基类BaseDexClassLoader。所以如果直接对DexClassLoader或者PathClassLoader获取pathList属性的话，会得到null。
+
+其次是获取pathList对应的dexElements，这里要注意dexElements是个数组对象：
+```java
+    public Object getDexElements(Object object) {
+        if (object == null)
+            return null;
+
+        Class<?> aClass = object.getClass();
+        try {
+            Field dexElements = aClass.getDeclaredField("dexElements");
+            dexElements.setAccessible(true);
+            return dexElements.get(object);
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+
+    }
+```
+
+接下来我们将两个数组对象合并成为一个：
+```java
+    public Object combineArray(Object object, Object object2) {
+        Class<?> aClass = Array.get(object, 0).getClass();
+
+        Object obj = Array.newInstance(aClass, 2);
+
+        Array.set(obj, 0, Array.get(object2, 0));
+        Array.set(obj, 1, Array.get(object, 0));
+
+        return obj;
+    }
+```
+上面这段代码我们根据数组对象的类型创建了一个新的大小为2的新数组，并将两个数组的第一个元素取出，将dex中的dexElement放在了第0个位置。这样可以确保在查找类时优先从dex的dexElement中查找。
+
+最后将原先的dexElements覆盖：
+```java
+    public void setField(Object pathList, Class aClass, String fieldName, Object fieldValue) {
+
+        try {
+            Field declaredField = aClass.getDeclaredField(fieldName);
+            declaredField.setAccessible(true);
+            declaredField.set(pathList, fieldValue);
+
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+```
+
+运行验证结果：
+
+
+大功告成！
+
 [https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1](https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1)
