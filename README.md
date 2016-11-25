@@ -226,7 +226,9 @@ pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
 好了，有了基本的实现思路之后，我们接下来对思路进行实践。
 
 下面的方法是我们主要的注入方法：
+
 ```java
+
     public String inject(String apkPath) {
         boolean hasBaseDexClassLoader = true;
 
@@ -255,7 +257,7 @@ pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
 
  这段代码原封不动采用于[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)文章中最后的实现代码，但是该文章并没有给出具体的注入细节。我们接下里的过程就是对没有给全的细节进行补充与讲解。
 
-这段代码的核心在于将DexClassLoader中的dexElements与PathClassLoader中的dexElements进行合并，然后将合并后的dexElements替换原先的dexElements。最后我们在使用ClassStudent类的时候便可以直接使用外部的ClassStudent，而不会再使用默认的ClassStudent类。默认情况下回加载默认的ClassStudent类。
+这段代码的核心在于将DexClassLoader中的dexElements与PathClassLoader中的dexElements进行合并，然后将合并后的dexElements替换原先的dexElements。最后我们在使用ClassStudent类的时候便可以直接使用外部的ClassStudent，而不会再使用默认的ClassStudent类。默认情况下会加载默认的ClassStudent类。
 
 首先我们通过classLoader获取各自的pathList对象：
 ```java
