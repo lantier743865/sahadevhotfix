@@ -477,3 +477,5 @@ loadClass()方法大概做了以下工作：
 
     private native static Class defineClass(String name, ClassLoader loader, int cookie);
 ```
+
+到此为止，我们就将一个类真正的加载过程梳理完了。
