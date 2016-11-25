@@ -19,7 +19,7 @@
 - 3.将转好的dex文件放入创建好的Android工程内并在启动时将其写入本地。
 - 4.加载解压后的.dex文件中的类，并调用其方法进行测试。
 
->**Note:** 在阅读本节之前最好先了解一下类加载器的双亲委派原则、DexClassLoader的使用以及反射的知识点。
+>**Note:** 在阅读本节之前最好先了解一下类加载器的双亲委派模型、DexClassLoader的使用以及反射的知识点。
 
 ###编写基本的Java文件并编译为.class文件
 首先我们在一个工程目录下开始创建并编写我们的Java文件，你可能会选择各种IDE来做这件事，但我在这里劝你不要这么做，因为有坑在等你。等把基本流程搞清楚可以再选择更进阶的方法。这里我们可以选择文本编辑器比如EditPlus来对Java文件进行编辑。
@@ -106,7 +106,7 @@ unsupported class file version 52.0
 - String dexPath:dex文件的绝对路径。在这里我将其放入了应用的cache文件夹下。
 - String optimizedDirectory:优化后的dex文件存放路径。DexClassLoader在构造完毕之后会对原有的dex文件优化并生成一个新的dex文件，在这里我选择的是.../cache/optimizedDirectory/目录。此外，API文档对该目录有严格的说明：**Do not cache optimized classes on external storage.**出于安全考虑，请不要将优化后的dex文件放入外部存储器中。
 - String libraryPath:dex文件所需要的库文件路径。这里没有依赖，使用空字符串代替。
-- ClassLoader parent:双亲委派原则中提到的父类加载器。这里我们使用默认的加载器，通过getClassLoader()方法获得。
+- ClassLoader parent:双亲委派模型中提到的父类加载器。这里我们使用默认的加载器，通过getClassLoader()方法获得。
 
 在解释完毕DexClassLoader的构造参数之后，我们开始对刚刚的dex文件进行加载：
 ```java
@@ -221,7 +221,7 @@ pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
 
 由此我们可以得知类的查找是通过遍历dexElements来进行查找的。所以为了实现替换效果，我们需要将DexClassLoader中的Element对象放到dexElements数组的第0个位置，这样才能在BaseDexClassLoader查找类时先找到DexClassLoader所用的user.dex中的类。
 
-> **Tips:** 如果对上面这句话看不懂的，没关系，可以先了解一下类的加载机制与ClassLoader的双亲委派。
+> **Tips:** 如果对上面这句话看不懂的，没关系，可以先了解一下类的加载机制与ClassLoader的双亲委派模型。
 
 好了，有了基本的实现思路之后，我们接下来对思路进行实践。
 
@@ -342,4 +342,138 @@ pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
 
 大功告成！
 
-[https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1](https://android.googlesource.com/platform/dalvik-snapshot/+/ics-mr1)
+###类的加载机制简要介绍
+一个类在被加载到内存之前要经过加载、验证、准备等过程。经过这些过程之后，虚拟机才会从方法区将代表类的运行时数据结构转换为内存中的Class。
+
+我们这节内容的重点在于一个类是如何被加载的，所以我们从类的加载入口开始。
+
+类的加载是由虚拟机触发的，类的加载入口位于ClassLoader的loadClassInternal()方法：
+```java
+    // This method is invoked by the virtual machine to load a class.
+    private Class<?> loadClassInternal(String name)
+        throws ClassNotFoundException
+    {
+        // For backward compatibility, explicitly lock on 'this' when
+        // the current class loader is not parallel capable.
+        if (parallelLockMap == null) {
+            synchronized (this) {
+                 return loadClass(name);
+            }
+        } else {
+            return loadClass(name);
+        }
+    }
+```
+
+这段方法还有段注释说明：这个方法由虚拟机调用用来加载一个类。我们看到这个类的内部最后调用了loadClass()方法。那我们进入loadClass()方法看看：
+```java
+    public Class<?> loadClass(String name) throws ClassNotFoundException {
+        return loadClass(name, false);
+    }
+```
+loadClass()方法方法内部调用了loadClass()的重载方法：
+```java
+    protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) {
+            // First, check if the class has already been loaded
+            Class<?> c = findLoadedClass(name);
+            if (c == null) {
+                long t0 = System.nanoTime();
+                try {
+                    if (parent != null) {
+                        c = parent.loadClass(name, false);
+                    } else {
+                        c = findBootstrapClassOrNull(name);
+                    }
+                } catch (ClassNotFoundException e) {
+                    // ClassNotFoundException thrown if class not found
+                    // from the non-null parent class loader
+                }
+
+                if (c == null) {
+                    // If still not found, then invoke findClass in order
+                    // to find the class.
+                    long t1 = System.nanoTime();
+                    c = findClass(name);
+
+                    // this is the defining class loader; record the stats
+                    sun.misc.PerfCounter.getParentDelegationTime().addTime(t1 - t0);
+                    sun.misc.PerfCounter.getFindClassTime().addElapsedTimeFrom(t1);
+                    sun.misc.PerfCounter.getFindClasses().increment();
+                }
+            }
+            if (resolve) {
+                resolveClass(c);
+            }
+            return c;
+        }
+    }
+```
+loadClass()方法大概做了以下工作：
+
+- 首先查找该类是否已经被加载.
+- 如果该ClassLoader有父加载器，那么调用父加载器的loadClass()方法.
+- 如果没有父加载器，则调用findBootstrapClassOrNull()方法进行加载，该方法会使用引导类加载器进行加载。普通类是不会被该加载器加载到的，所以这里一般返回null.
+- 如果前面的步骤都没找到，那调用自身的findClass()方法进行查找。
+
+好，ClassLoader的findClass()方法是个空方法，所以这个过程一般是由子加载器实现的。Java的加载器这么设计是有一定的渊源的，感兴趣的读者可以自行查找书籍了解。
+```java
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        throw new ClassNotFoundException(name);
+    }
+```
+
+在Android中，ClassLoader的直接子类是BaseDexClassLoader，我们看一下BaseDexClassLoader的findClass()实现：
+```java
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        Class clazz = pathList.findClass(name);
+
+        if (clazz == null) {
+            throw new ClassNotFoundException(name);
+        }
+
+        return clazz;
+    }
+```
+
+> **Tips:** 有需要虚拟机以及类加载器全套代码的，请使用以下命令克隆:
+> git clone https://android.googlesource.com/platform/dalvik-snapshot
+> 相关代码位于项目的ics-mr1分支上。
+
+看到这里我们可以知道，Android中类的查找是通过这个pathList进行查找的，而pathList又是个什么鬼呢？
+
+在BaseDexClassLoader中声明了以下变量：
+```java
+    /** structured lists of path elements */
+    private final DexPathList pathList;
+```
+
+所以我们可以看看DexPathList的findClass()方法做了什么：
+```java
+    public Class findClass(String name) {
+        for (Element element : dexElements) {
+            DexFile dex = element.dexFile;
+
+            if (dex != null) {
+                Class clazz = dex.loadClassBinaryName(name, definingContext);
+                if (clazz != null) {
+                    return clazz;
+                }
+            }
+        }
+
+        return null;
+    }
+```
+
+这里通过遍历dexElements中的Element对象进行查找，最终走的是DexFile的loadClassBinaryName()方法：
+```java
+    public Class loadClassBinaryName(String name, ClassLoader loader) {
+        return defineClass(name, loader, mCookie);
+    }
+
+    private native static Class defineClass(String name, ClassLoader loader, int cookie);
+```
