@@ -2,6 +2,7 @@ package com.sahadev.sahadevhotfix;
 
 import android.content.Context;
 import android.content.res.Resources;
+import android.os.PersistableBundle;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.widget.TextView;
@@ -55,6 +56,12 @@ public class MainActivity extends AppCompatActivity {
         boolean hasBaseDexClassLoader = true;
 
         File file = new File(apkPath);
+
+        File optimizedDirectoryFile = new File(file.getParentFile(), "optimizedDirectory");
+
+        if (!optimizedDirectoryFile.exists())
+            optimizedDirectoryFile.mkdir();
+
         try {
             Class.forName("dalvik.system.BaseDexClassLoader");
         } catch (ClassNotFoundException e) {
@@ -62,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
         }
         if (hasBaseDexClassLoader) {
             PathClassLoader pathClassLoader = (PathClassLoader) getClassLoader();
-            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", pathClassLoader);
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, optimizedDirectoryFile.getAbsolutePath(), "", pathClassLoader);
             try {
                 Object dexElements = combineArray(getDexElements(getPathList(pathClassLoader)), getDexElements(getPathList(dexClassLoader)));
                 Object pathList = getPathList(pathClassLoader);
@@ -154,9 +161,14 @@ public class MainActivity extends AppCompatActivity {
 
         File file = new File(apkPath);
 
+        File optimizedDirectoryFile = new File(file.getParentFile(), "optimizedDirectory");
+
+        if (!optimizedDirectoryFile.exists())
+            optimizedDirectoryFile.mkdir();
+
         try {
 
-            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", classLoader);
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, optimizedDirectoryFile.getAbsolutePath(), "", classLoader);
             Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
             mLog.i(TAG, "com.sahadev.bean.ClassStudent = " + aClass);
 
