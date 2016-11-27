@@ -51,7 +51,7 @@ public class MainActivity extends AppCompatActivity {
         classStudent.setName("Lavon");
         mLog.i(TAG, classStudent.getName());
     }
-
+ 
     public String inject(String apkPath) {
         boolean hasBaseDexClassLoader = true;
 
