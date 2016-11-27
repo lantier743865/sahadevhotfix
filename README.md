@@ -164,185 +164,7 @@ Class<?> aClass = dexClassLoader.loadClass("com.sahadev.bean.ClassStudent");
 最后附上我们的运行截图：
 ![](https://code.csdn.net/u011064099/sahadevhotfix/blob/master/blogResource/194172438045771671.jpg)
 
-##二、Class文件的替换
-在完成基本外部类加载之后，我们这一节开始对工程内部的类实行替换。
-
-> **Tips:** 本章主要依赖文章[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)中的未实现代码实现，实现思路也源自该文章，在阅读本文之前可以先行了解。
-
-这一节我们主要实现的流程有：
-
-- 在类的内部创建与外部dex相同的类文件，但在调用getName()方法返回字符串时会稍有区别，以便进行结果验证
-- 使用DexClassLoader加载外部的user.dex
-- 将DexClassLoader中的dexElements放在PathClassLoader的dexElements之前
-- 验证替换结果
-
-因为上节课中专门声明了不可以对类声明包名，但是这样在Android工程中无法引用没有包名的类，所以把不能声明包名的问题解决了一下。
-
-上一节课主要遇到的问题是在编译Java文件时没有使用正当的命令。对含有包名的Java文件应当使用以下命令：
-```
-javac -d ./ ClassStudent.java
-```
-
-经过上面命令编译后的.class文件便可以顺利通过dx工具的转换。
-
-我们还是按照第一节的步骤将转换后的user.dex文件放入工程中并写入本地磁盘，以便稍后使用。
-
-在开始之前还是先说一下具体的实现思路：一个类在使用之前必须要经过加载器的加载才能使用，在加载器加载类之前会调用自身的findClass()方法进行查找。然而在Android中类的查找使用的是BaseDexClassLoader，BaseDexClassLoader对findClass()方法进行了重写：
-```java
-    @Override
-    protected Class<?> findClass(String name) throws ClassNotFoundException {
-        Class clazz = pathList.findClass(name);
-
-        if (clazz == null) {
-            throw new ClassNotFoundException(name);
-        }
-
-        return clazz;
-    }
-```
-
-pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
-```java
-    public Class findClass(String name) {
-        for (Element element : dexElements) {
-            DexFile dex = element.dexFile;
-
-            if (dex != null) {
-                Class clazz = dex.loadClassBinaryName(name, definingContext);
-                if (clazz != null) {
-                    return clazz;
-                }
-            }
-        }
-
-        return null;
-    }
-```
-
-由此我们可以得知类的查找是通过遍历dexElements来进行查找的。所以为了实现替换效果，我们需要将DexClassLoader中的Element对象放到dexElements数组的第0个位置，这样才能在BaseDexClassLoader查找类时先找到DexClassLoader所用的user.dex中的类。
-
-> **Tips:** 如果对上面这句话看不懂的，没关系，可以先了解一下类的加载机制与ClassLoader的双亲委派模型。
-
-好了，有了基本的实现思路之后，我们接下来对思路进行实践。
-
-下面的方法是我们主要的注入方法：
-
-```java
-
-    public String inject(String apkPath) {
-        boolean hasBaseDexClassLoader = true;
-
-        File file = new File(apkPath);
-        try {
-            Class.forName("dalvik.system.BaseDexClassLoader");
-        } catch (ClassNotFoundException e) {
-            hasBaseDexClassLoader = false;
-        }
-        if (hasBaseDexClassLoader) {
-            PathClassLoader pathClassLoader = (PathClassLoader) getClassLoader();
-            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", pathClassLoader);
-            try {
-                Object dexElements = combineArray(getDexElements(getPathList(pathClassLoader)), getDexElements(getPathList(dexClassLoader)));
-                Object pathList = getPathList(pathClassLoader);
-                setField(pathList, pathList.getClass(), "dexElements", dexElements);
-                return "SUCCESS";
-            } catch (Throwable e) {
-                e.printStackTrace();
-                return android.util.Log.getStackTraceString(e);
-            }
-        }
-        return "SUCCESS";
-    }
- ```
-
- 这段代码原封不动采用于[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)文章中最后的实现代码，但是该文章并没有给出具体的注入细节。我们接下里的过程就是对没有给全的细节进行补充与讲解。
-
-这段代码的核心在于将DexClassLoader中的dexElements与PathClassLoader中的dexElements进行合并，然后将合并后的dexElements替换原先的dexElements。最后我们在使用ClassStudent类的时候便可以直接使用外部的ClassStudent，而不会再使用默认的ClassStudent类。默认情况下会加载默认的ClassStudent类。
-
-首先我们通过classLoader获取各自的pathList对象：
-```java
-    public Object getPathList(BaseDexClassLoader classLoader) {
-        Class<? extends BaseDexClassLoader> aClass = classLoader.getClass();
-
-        Class<?> superclass = aClass.getSuperclass();
-        try {
-
-            Field pathListField = superclass.getDeclaredField("pathList");
-            pathListField.setAccessible(true);
-            Object object = pathListField.get(classLoader);
-
-            return object;
-        } catch (NoSuchFieldException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-```
-
-在使用以上反射的时候要注意，pathList属性属于基类BaseDexClassLoader。所以如果直接对DexClassLoader或者PathClassLoader获取pathList属性的话，会得到null。
-
-其次是获取pathList对应的dexElements，这里要注意dexElements是个数组对象：
-```java
-    public Object getDexElements(Object object) {
-        if (object == null)
-            return null;
-
-        Class<?> aClass = object.getClass();
-        try {
-            Field dexElements = aClass.getDeclaredField("dexElements");
-            dexElements.setAccessible(true);
-            return dexElements.get(object);
-        } catch (NoSuchFieldException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        }
-        return null;
-
-    }
-```
-
-接下来我们将两个数组对象合并成为一个：
-```java
-    public Object combineArray(Object object, Object object2) {
-        Class<?> aClass = Array.get(object, 0).getClass();
-
-        Object obj = Array.newInstance(aClass, 2);
-
-        Array.set(obj, 0, Array.get(object2, 0));
-        Array.set(obj, 1, Array.get(object, 0));
-
-        return obj;
-    }
-```
-上面这段代码我们根据数组对象的类型创建了一个新的大小为2的新数组，并将两个数组的第一个元素取出，将dex中的dexElement放在了第0个位置。这样可以确保在查找类时优先从dex的dexElement中查找。
-
-最后将原先的dexElements覆盖：
-```java
-    public void setField(Object pathList, Class aClass, String fieldName, Object fieldValue) {
-
-        try {
-            Field declaredField = aClass.getDeclaredField(fieldName);
-            declaredField.setAccessible(true);
-            declaredField.set(pathList, fieldValue);
-
-        } catch (NoSuchFieldException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        }
-
-    }
-```
-
-运行验证结果：
-
-
-大功告成！
-
-###类的加载机制简要介绍
+###二、类的加载机制简要介绍
 一个类在被加载到内存之前要经过加载、验证、准备等过程。经过这些过程之后，虚拟机才会从方法区将代表类的运行时数据结构转换为内存中的Class。
 
 我们这节内容的重点在于一个类是如何被加载的，所以我们从类的加载入口开始。
@@ -479,3 +301,270 @@ loadClass()方法大概做了以下工作：
 ```
 
 到此为止，我们就将一个类真正的加载过程梳理完了。
+
+##三、Class文件的替换
+在上一节了解了基本的类加载原理之后，我们这一节开始对工程内部的类实行替换。
+
+> **Tips:** 本章主要依赖文章[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)中的未实现代码实现，实现思路也源自该文章，在阅读本文之前可以先行了解。
+
+这一节我们主要实现的流程有：
+
+- 在工程内创建相同的ClassStudent类，但在调用getName()方法返回字符串时会稍有区别，用于结果验证
+- 使用DexClassLoader加载外部的user.dex
+- 将DexClassLoader中的dexElements放在PathClassLoader的dexElements之前
+- 验证替换结果
+
+###创建工程内的ClassStudent
+我们在第一节中演示了如何加载外部的Class，为了起到热修复效果，那么我们需要在工程内有一个被替换的类，被替换的ClassStudent类内容如下：
+```java
+package com.sahadev.bean;
+
+/**
+ * Created by shangbin on 2016/11/24.
+ * Email: sahadev@foxmail.com
+ */
+
+public class ClassStudent {
+    private String name;
+
+    public ClassStudent() {
+
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getName(){
+        return this.name + ".Miss";
+    }
+
+}
+```
+外部的ClassStudent类的内容如下：
+```java
+package com.sahadev.bean;
+
+/**
+ * Created by shangbin on 2016/11/24.
+ * Email: sahadev@foxmail.com
+ */
+
+public class ClassStudent {
+	private String name;
+
+	public ClassStudent() {
+
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public String getName(){
+		return this.name + ".Mr";	
+	}
+}
+```
+
+这两个类除了在getName()方法返回之处有差别之外，其它地方一模一样，不过这足可以让我们说明情况。
+
+> **我们这里要实现的目的：** 我们默认调用getName()方法返回的是**"xxxx.Miss"**，如果热修复成功，那么再使用该方法的话，返回的则会是**"xxxx.Mr"**。
+
+###对含有包名的类再次编译
+因为第一节中专门声明了不可以对类声明包名，但是这样在Android工程中无法引用到该类，所以把不能声明包名的问题解决了一下。
+
+不能声明包名的主要原因是在编译Java文件时，没有正确的使用命令。对含有包名的Java文件应当使用以下命令：
+```
+javac -d ./ ClassStudent.java
+```
+
+经过上面命令编译后的.class文件便可以顺利通过dx工具的转换。
+
+我们还是按照第一节的步骤将转换后的user.dex文件放入工程中并写入本地磁盘，以便稍后使用。
+
+####替换工程内的类文件
+在开始之前还是再回顾一下实现思路：类在使用之前必须要经过加载器的加载才能够使用，在加载类时会调用自身的findClass()方法进行查找。然而在Android中类的查找使用的是BaseDexClassLoader，BaseDexClassLoader对findClass()方法进行了重写：
+```java
+    @Override
+    protected Class<?> findClass(String name) throws ClassNotFoundException {
+        Class clazz = pathList.findClass(name);
+
+        if (clazz == null) {
+            throw new ClassNotFoundException(name);
+        }
+
+        return clazz;
+    }
+```
+
+pathList是类DexPathList的实例，这里pathList.findClass的实现如下：
+```java
+    public Class findClass(String name) {
+        for (Element element : dexElements) {
+            DexFile dex = element.dexFile;
+
+            if (dex != null) {
+                Class clazz = dex.loadClassBinaryName(name, definingContext);
+                if (clazz != null) {
+                    return clazz;
+                }
+            }
+        }
+
+        return null;
+    }
+```
+
+由此我们可以得知类的查找是通过遍历dexElements来进行查找的。所以为了实现替换效果，我们需要将DexClassLoader中的Element对象放到dexElements数组的第0个位置，这样才能在BaseDexClassLoader查找类时先找到DexClassLoader所用的user.dex中的类。
+
+> **Tips:** 如果对上面这段内容看不懂的，没关系，可以移步到本系列课程的第二节了解一下类加载的具体流程。
+
+类的加载是从上而下加载的，所以就算是DexClassLoader加载了外部的类，但是在系统使用类的时候还是会先在ClassLoader中查找，如果找不到则会在BaseDexClassLoader中查找，如果再找不到，就会进入PathClassLoader中查找，最后才会使用DexClassLoader进行查找，所以按照这个流程外部类是无法正常发挥作用的。所以我们的目的就是在查找工程内的类之前，先让加载器去外部的dex中查找。
+
+好了，再次梳理了思路之后，我们接下来对思路进行实践。
+
+下面的方法是我们主要的注入方法：
+
+```java
+    public String inject(String apkPath) {
+        boolean hasBaseDexClassLoader = true;
+
+        File file = new File(apkPath);
+        try {
+            Class.forName("dalvik.system.BaseDexClassLoader");
+        } catch (ClassNotFoundException e) {
+            hasBaseDexClassLoader = false;
+        }
+        if (hasBaseDexClassLoader) {
+            PathClassLoader pathClassLoader = (PathClassLoader) getClassLoader();
+            DexClassLoader dexClassLoader = new DexClassLoader(apkPath, file.getParent() + "/optimizedDirectory/", "", pathClassLoader);
+            try {
+                Object dexElements = combineArray(getDexElements(getPathList(pathClassLoader)), getDexElements(getPathList(dexClassLoader)));
+                Object pathList = getPathList(pathClassLoader);
+                setField(pathList, pathList.getClass(), "dexElements", dexElements);
+                return "SUCCESS";
+            } catch (Throwable e) {
+                e.printStackTrace();
+                return android.util.Log.getStackTraceString(e);
+            }
+        }
+        return "SUCCESS";
+    }
+ ```
+
+ > **Tips:** 这段代码原封不动采用于[http://blog.csdn.net/vurtne_ye/article/details/39666381](http://blog.csdn.net/vurtne_ye/article/details/39666381)文章中最后的实现代码，但是该文章并没有给出具体的注入细节。我们接下里的过程就是对没有给全的细节进行补充与讲解。
+
+这段代码的核心在于将DexClassLoader中的dexElements与PathClassLoader中的dexElements进行合并，然后将合并后的dexElements替换原先的dexElements。最后我们在使用ClassStudent类的时候便可以直接使用外部的ClassStudent，而不会再加载默认的ClassStudent类。
+
+首先我们通过classLoader获取各自的pathList对象：
+```java
+    public Object getPathList(BaseDexClassLoader classLoader) {
+        Class<? extends BaseDexClassLoader> aClass = classLoader.getClass();
+
+        Class<?> superclass = aClass.getSuperclass();
+        try {
+
+            Field pathListField = superclass.getDeclaredField("pathList");
+            pathListField.setAccessible(true);
+            Object object = pathListField.get(classLoader);
+
+            return object;
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+```
+
+在使用以上反射的时候要注意，pathList属性属于基类BaseDexClassLoader。所以如果直接获取DexClassLoader或者PathClassLoader的pathList属性的话，会得到null。
+
+其次是获取pathList对应的dexElements，这里要注意dexElements是个数组对象：
+```java
+    public Object getDexElements(Object object) {
+        if (object == null)
+            return null;
+
+        Class<?> aClass = object.getClass();
+        try {
+            Field dexElements = aClass.getDeclaredField("dexElements");
+            dexElements.setAccessible(true);
+            return dexElements.get(object);
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+        return null;
+
+    }
+```
+
+接下来我们将两个数组对象合并成为一个：
+```java
+    public Object combineArray(Object object, Object object2) {
+        Class<?> aClass = Array.get(object, 0).getClass();
+
+        Object obj = Array.newInstance(aClass, 2);
+
+        Array.set(obj, 0, Array.get(object2, 0));
+        Array.set(obj, 1, Array.get(object, 0));
+
+        return obj;
+    }
+```
+上面这段代码我们根据数组对象的类型创建了一个新的大小为2的新数组，并将两个数组的第一个元素取出，将代表外部dex的dexElement放在了第0个位置。这样便可以确保在查找类时优先从外部的dex中查找。
+
+最后将原先的dexElements覆盖：
+```java
+    public void setField(Object pathList, Class aClass, String fieldName, Object fieldValue) {
+
+        try {
+            Field declaredField = aClass.getDeclaredField(fieldName);
+            declaredField.setAccessible(true);
+            declaredField.set(pathList, fieldValue);
+
+        } catch (NoSuchFieldException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        }
+
+    }
+```
+
+###验证替换结果
+好，我们做完以上的工作之后，写一段代码来进行验证：
+```java
+    /**
+     * 验证替换类后的效果
+     */
+    private void demonstrationRawMode() {
+        ClassStudent classStudent = new ClassStudent();
+        classStudent.setName("Lavon");
+        mLog.i(TAG, classStudent.getName());
+    }
+```
+
+如果我们没有替换成功的话，那么这里默认使用的是内部的ClassStudent，getName()返回的会是**Lavon.Miss**。
+如果我们替换成功的话，那么这里默认使用的是外部的ClassStudent，getName()返回的则会是**Lavon.Mr**。
+
+我们实际运行看下效果：
+![这里写图片描述](http://img.blog.csdn.net/20161127092544502)
+
+这说明我们已经完成了基本的热修复。有任何疑问欢迎留言。
+
+本节课程主要分为3块：
+
+- 1.[一步步手动实现热修复(一)-dex文件的生成与加载](http://blog.csdn.net/sahadev_/article/details/53318251)
+- 2.[一步步手动实现热修复(二)-类的加载机制简要介绍](http://blog.csdn.net/sahadev_/article/details/53334911)
+- 3.[一步步手动实现热修复(三)-Class文件的替换](http://blog.csdn.net/sahadev_/article/details/53363052)
+
+本节示例所用到的任何资源都已开源，项目中包含工程中所用到代码、示例图片、说明文档。项目地址为：
+[https://code.csdn.net/u011064099/sahadevhotfix/tree/master](https://code.csdn.net/u011064099/sahadevhotfix/tree/master)
+
+-----------------
+我建了一个QQ群，欢迎对学习有兴趣的同学加入。我们可以一起探讨、深究、掌握那些我们会用到的技术，让自己不至于太落伍。
+![这里写图片描述](http://img.blog.csdn.net/20161127095233746)
